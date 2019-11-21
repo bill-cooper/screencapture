@@ -1,4 +1,6 @@
-﻿using OpenQA.Selenium;
+﻿using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Blob;
+using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Interactions;
@@ -7,6 +9,8 @@ using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -16,11 +20,24 @@ namespace ScreenCapture
 {
     class Program
     {
+        static CloudBlobClient blobClient;
+        static string blobContainerName = "webappstoragedotnet-imagecontainer";
+        static CloudBlobContainer blobContainer;
         private static ChromeDriver _chrome;
         static void Main(string[] args)
         {
             try
             {
+
+                CloudStorageAccount storageAccount = CloudStorageAccount.Parse(ConfigurationManager.AppSettings["StorageConnectionString"].ToString());
+
+                // Create a blob client for interacting with the blob service.
+                blobClient = storageAccount.CreateCloudBlobClient();
+                blobContainer = blobClient.GetContainerReference(blobContainerName);
+                blobContainer.CreateIfNotExists();
+                blobContainer.SetPermissions(new BlobContainerPermissions { PublicAccess = BlobContainerPublicAccessType.Blob });
+
+
                 _chrome = new ChromeDriver(@"../../artifacts");
                 _chrome.Manage().Window.Maximize();
                 _chrome.Navigate().GoToUrl("https://login.xfinity.com/login");
@@ -92,8 +109,16 @@ namespace ScreenCapture
             using (Graphics g = Graphics.FromImage(bmp))
             {
                 g.CopyFromScreen(0, 0, 0, 0, Screen.PrimaryScreen.Bounds.Size);
-                bmp.Save(@"../../captures/screenshot.png");  // saves the image
+                using (MemoryStream memoryStream = new MemoryStream())
+                {
+                    bmp.Save(memoryStream, ImageFormat.Png);
+                    memoryStream.Seek(0, SeekOrigin.Begin); // otherwise you'll get zero byte files
+                    CloudBlockBlob blob = blobContainer.GetBlockBlobReference($"screenshot{string.Format("{0:-yyyy-MM-dd_HH-mm-ss-fff}", DateTime.Now)}.png");
+                    blob.UploadFromStream(memoryStream);
+                }
             }
+
+
         }
     }
 }
